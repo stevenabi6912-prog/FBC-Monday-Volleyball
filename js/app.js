@@ -474,7 +474,8 @@ function renderSchedule() {
   sched.rounds.forEach((r) => {
     const wrap = el("div", "round" + (r.round === currentRound ? " current" : ""));
     const head = el("div", "round-head");
-    head.innerHTML = `<span class="rlabel">Round ${r.round}</span>` + (r.round === currentRound ? `<span class="pill">current</span>` : "");
+    const label = r.label ? r.label : "Round " + r.round;
+    head.innerHTML = `<span class="rlabel">${esc(label)}</span>` + (r.round === currentRound ? `<span class="pill">current</span>` : "");
     wrap.appendChild(head);
 
     r.matches.forEach((m) => {
@@ -496,6 +497,12 @@ function renderSchedule() {
         const btn = el("button", "primary enter", m.played ? "Edit score" : "Enter score");
         btn.addEventListener("click", () => openScoreEntry(r, m, nameOf));
         mDiv.appendChild(btn);
+        if (m.custom) {
+          const rm = el("button", "enter", "Remove game");
+          rm.style.marginTop = "6px";
+          rm.addEventListener("click", () => confirmRemoveGame(r, m, nameOf));
+          mDiv.appendChild(rm);
+        }
       }
       wrap.appendChild(mDiv);
     });
@@ -525,6 +532,83 @@ function openScoreEntry(round, match, nameOf) {
       mm.scoreA = a; mm.scoreB = b; mm.played = true;
       try { await saveTonight({ schedule: sched, playStarted: true }); toast("Score saved ✔"); }
       catch (e) { console.error(e); toast("Save failed"); return false; }
+    },
+  });
+}
+
+// ---- Custom / extra games (beyond the auto round-robin) --------------------
+$("#addGameBtn").addEventListener("click", openCustomGame);
+
+function openCustomGame() {
+  if (!requireAdmin()) return;
+  const teams = state.tonight.teams || [];
+  if (teams.length < 2) { toast("Generate teams first (need at least 2)"); return; }
+  const opts = teams.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
+  openModal({
+    title: "Add a game",
+    body: `
+      <p class="hint">Add an extra match between two teams. Scores are optional — leave them blank to enter later.</p>
+      <label>Team A</label>
+      <select id="cgA">${opts}</select>
+      <label>Team B</label>
+      <select id="cgB">${opts}</select>
+      <label>Score A (optional)</label>
+      <input id="cgSA" type="number" inputmode="numeric" min="0" />
+      <label>Score B (optional)</label>
+      <input id="cgSB" type="number" inputmode="numeric" min="0" />`,
+    okLabel: "Add game",
+    afterOpen: () => { const b = $("#cgB"); if (b && teams.length > 1) b.selectedIndex = 1; },
+    onOk: async () => {
+      const a = $("#cgA").value, b = $("#cgB").value;
+      if (a === b) { toast("Pick two different teams"); return false; }
+      const saR = $("#cgSA").value.trim(), sbR = $("#cgSB").value.trim();
+      let sa = null, sb = null;
+      if (saR !== "" || sbR !== "") {
+        sa = parseInt(saR, 10); sb = parseInt(sbR, 10);
+        if (isNaN(sa) || isNaN(sb)) { toast("Enter both scores, or leave both blank"); return false; }
+        if (sa === sb) { toast("No ties — someone has to win"); return false; }
+      }
+      try { await addCustomGame(a, b, sa, sb); toast("Game added ✔"); gotoSub("schedule"); }
+      catch (e) { console.error(e); toast("Failed to add game"); return false; }
+    },
+  });
+}
+
+async function addCustomGame(aId, bId, scoreA, scoreB) {
+  const sched = JSON.parse(JSON.stringify(state.tonight.schedule || { rounds: [] }));
+  if (!sched.rounds) sched.rounds = [];
+  // Put extra games in their own "Extra Games" round so they read clearly.
+  let extra = sched.rounds.find((r) => r.label === "Extra Games");
+  if (!extra) {
+    const maxRound = sched.rounds.reduce((m, r) => Math.max(m, r.round || 0), 0);
+    extra = { round: maxRound + 1, label: "Extra Games", matches: [] };
+    sched.rounds.push(extra);
+  }
+  const played = scoreA != null && scoreB != null;
+  extra.matches.push({
+    id: "mCustom_" + aId + "_" + bId + "_" + extra.matches.length + "_" + Date.now(),
+    court: (extra.matches.length % 2) + 1,
+    aTeamId: aId, bTeamId: bId,
+    scoreA: played ? scoreA : null, scoreB: played ? scoreB : null,
+    played, bye: false, custom: true,
+  });
+  await saveTonight({ schedule: sched, playStarted: state.tonight.playStarted || played });
+}
+
+function confirmRemoveGame(round, match, nameOf) {
+  if (!requireAdmin()) return;
+  openModal({
+    title: "Remove this game?",
+    body: `<p>Remove the extra game <strong>${esc(nameOf(match.aTeamId))} vs ${esc(nameOf(match.bTeamId))}</strong>? This only removes games you added, not the scheduled round-robin.</p>`,
+    okLabel: "Remove", cancelLabel: "Keep",
+    onOk: async () => {
+      const sched = JSON.parse(JSON.stringify(state.tonight.schedule));
+      const rr = sched.rounds.find((x) => x.round === round.round);
+      if (rr) rr.matches = rr.matches.filter((x) => x.id !== match.id);
+      // drop the Extra Games round entirely if it's now empty
+      sched.rounds = sched.rounds.filter((r) => !(r.label === "Extra Games" && r.matches.length === 0));
+      try { await saveTonight({ schedule: sched }); toast("Game removed"); }
+      catch (e) { console.error(e); toast("Remove failed"); return false; }
     },
   });
 }
@@ -630,8 +714,27 @@ function renderHistory() {
       ${histStandings(h)}
       ${histMatches(h)}
       ${histAttendance(h)}`;
+    if (state.admin) {
+      const del = el("button", "danger", "🗑 Delete this night");
+      del.style.marginTop = "12px";
+      del.addEventListener("click", (e) => { e.preventDefault(); confirmDeleteHistory(h); });
+      body.appendChild(del);
+    }
     card.appendChild(body);
     area.appendChild(card);
+  });
+}
+
+function confirmDeleteHistory(h) {
+  if (!requireAdmin()) return;
+  openModal({
+    title: "Delete this history entry?",
+    body: `<p>Permanently delete <strong>${esc(h.date || "this night")}</strong> from History? This can't be undone. (Your roster and tonight's game are not affected.)</p>`,
+    okLabel: "Delete", cancelLabel: "Keep",
+    onOk: async () => {
+      try { await deleteDoc(doc(db, "history", h.id)); toast("History entry deleted"); }
+      catch (e) { console.error(e); toast("Delete failed"); return false; }
+    },
   });
 }
 function histTeams(h) {
