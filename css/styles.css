@@ -1,0 +1,235 @@
+/* ==========================================================================
+   FBC Pickup Volleyball — mobile-first, big tap targets, clean & a little fun.
+   ========================================================================== */
+:root {
+  --blue: #2f6fed;
+  --blue-dark: #1f57c9;
+  --ink: #1c2430;
+  --muted: #6b7688;
+  --line: #e3e8f0;
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --green: #22a45d;
+  --red: #e0523f;
+  --amber: #e6a417;
+  --radius: 14px;
+  --tap: 48px; /* minimum tap target */
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  padding-bottom: env(safe-area-inset-bottom);
+  line-height: 1.4;
+}
+
+/* ---------- Header ---------- */
+.app-header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px; padding-top: calc(12px + env(safe-area-inset-top));
+  background: linear-gradient(135deg, var(--blue), var(--blue-dark));
+  color: #fff;
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand-ball { font-size: 26px; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.brand-text strong { font-size: 16px; }
+.brand-text small { opacity: .85; font-size: 12px; }
+.admin-btn {
+  background: rgba(255,255,255,.16); color: #fff; border: 0;
+  border-radius: 999px; padding: 10px 14px; font-size: 14px; font-weight: 600;
+  min-height: var(--tap); cursor: pointer;
+}
+.admin-btn:active { background: rgba(255,255,255,.3); }
+
+.admin-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #fff6d6; color: #6a5200; padding: 8px 14px; font-size: 13px;
+  border-bottom: 1px solid #f0e2a8;
+}
+.admin-banner button {
+  background: #6a5200; color: #fff; border: 0; border-radius: 8px;
+  padding: 6px 12px; font-weight: 600; cursor: pointer;
+}
+
+/* ---------- Tabs ---------- */
+.tabs {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; background: var(--card); border-bottom: 1px solid var(--line);
+}
+.tab {
+  flex: 1; border: 0; background: none; padding: 14px 4px;
+  font-size: 15px; font-weight: 600; color: var(--muted);
+  border-bottom: 3px solid transparent; cursor: pointer; min-height: var(--tap);
+}
+.tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+.subtabs { display: flex; gap: 6px; padding: 10px 12px 0; overflow-x: auto; }
+.subtab {
+  border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600;
+  white-space: nowrap; cursor: pointer; min-height: 40px;
+}
+.subtab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+main { padding: 14px; max-width: 720px; margin: 0 auto; }
+
+.view { display: none; }
+.view.active { display: block; }
+.subview { display: none; }
+.subview.active { display: block; }
+
+h2 { font-size: 19px; margin: 8px 0 12px; display: flex; align-items: center; gap: 8px; }
+.pill {
+  font-size: 12px; font-weight: 600; color: var(--blue);
+  background: #e9f0ff; border-radius: 999px; padding: 3px 10px;
+}
+
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+.hint { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+
+/* ---------- Buttons ---------- */
+button { font-family: inherit; }
+.primary, .danger, button.plain {
+  border: 0; border-radius: 10px; padding: 12px 16px; font-size: 14px;
+  font-weight: 700; cursor: pointer; min-height: var(--tap);
+}
+.primary { background: var(--blue); color: #fff; }
+.primary:active { background: var(--blue-dark); }
+.danger { background: var(--red); color: #fff; }
+.btn-group button:not(.primary) {
+  background: #eef1f7; color: var(--ink); border-radius: 10px;
+  padding: 12px 14px; font-weight: 700; min-height: var(--tap); border: 0; cursor: pointer;
+}
+
+/* ---------- Inputs ---------- */
+.search, input[type="text"], input[type="date"], input[type="password"], select {
+  width: 100%; padding: 13px 14px; font-size: 16px; /* 16px avoids iOS zoom */
+  border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
+  margin-bottom: 10px; min-height: var(--tap);
+}
+
+/* ---------- Lists ---------- */
+.list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.list-item {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; min-height: var(--tap);
+}
+.list-item .name { font-weight: 600; font-size: 15px; }
+.list-item .meta { color: var(--muted); font-size: 13px; }
+.list-item .grow { flex: 1; min-width: 0; }
+.list-item.checked { border-color: #bfe6cf; background: #f2fbf6; }
+
+.check {
+  width: 30px; height: 30px; border-radius: 8px; border: 2px solid var(--line);
+  display: grid; place-items: center; font-size: 18px; color: transparent; flex: none;
+}
+.checked .check { background: var(--green); border-color: var(--green); color: #fff; }
+
+.icon-btn {
+  border: 0; background: #eef1f7; border-radius: 8px; width: 40px; height: 40px;
+  font-size: 16px; cursor: pointer;
+}
+.icon-btn.danger { background: #fdecea; }
+
+/* ---------- Team cards ---------- */
+.team-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px; margin-bottom: 12px;
+}
+.team-card h3 { margin: 0 0 4px; font-size: 17px; }
+.team-card .team-sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.team-card .players { display: flex; flex-direction: column; gap: 6px; }
+.player-chip { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.player-chip .badge {
+  font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+  background: #eef1f7; color: var(--muted);
+}
+.player-chip .badge.sub { background: #fff1d6; color: #8a6400; }
+
+/* ---------- Schedule ---------- */
+.round { margin-bottom: 16px; }
+.round-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.round-head .rlabel { font-weight: 700; }
+.round.current .rlabel { color: var(--blue); }
+.match {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px; margin-bottom: 8px;
+}
+.match.played { border-color: #cfe6d8; }
+.match .court { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+.match .teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.match .t { font-weight: 600; font-size: 15px; }
+.match .t.right { text-align: right; }
+.match .sc { font-weight: 800; font-size: 18px; min-width: 26px; text-align: center; }
+.match .winner { color: var(--green); }
+.match .vs { color: var(--muted); font-size: 13px; }
+.match .enter { margin-top: 10px; width: 100%; }
+.bye-tag { font-size: 12px; color: var(--amber); font-weight: 700; }
+
+/* ---------- Standings ---------- */
+table.standings { width: 100%; border-collapse: collapse; background: var(--card); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
+table.standings th, table.standings td { padding: 12px 10px; text-align: center; font-size: 14px; }
+table.standings th { background: #f0f3fa; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+table.standings td.name { text-align: left; font-weight: 600; }
+table.standings tr + tr td { border-top: 1px solid var(--line); }
+.rank-1 td.rank { color: var(--amber); font-weight: 800; }
+
+/* ---------- History ---------- */
+.hist-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px; margin-bottom: 12px;
+}
+.hist-card summary { font-weight: 700; cursor: pointer; font-size: 15px; }
+.hist-card .hist-body { margin-top: 10px; font-size: 14px; }
+.hist-card .hist-body h4 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; }
+
+/* ---------- Empty states ---------- */
+.empty {
+  text-align: center; color: var(--muted); padding: 34px 18px;
+  background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius);
+}
+.empty .big { font-size: 34px; display: block; margin-bottom: 8px; }
+
+/* ---------- Modal ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(18,24,38,.5); z-index: 50;
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 0; animation: fade .15s ease;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: #fff; width: 100%; max-width: 480px;
+  border-radius: 18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+  animation: slideup .2s ease;
+}
+@media (min-width: 520px) { .modal-backdrop { align-items: center; } .modal { border-radius: 18px; } }
+@keyframes slideup { from { transform: translateY(30px); } to { transform: translateY(0); } }
+.modal h3 { margin: 0 0 14px; font-size: 18px; }
+.modal label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin: 8px 0 4px; }
+.modal .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+.modal .modal-actions button { flex: 1; }
+.modal .cancel { background: #eef1f7; color: var(--ink); }
+.warn { background: #fff6d6; color: #8a6400; padding: 8px 10px; border-radius: 8px; font-size: 13px; margin-top: 6px; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 999px;
+  font-size: 14px; z-index: 80; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+}
+
+/* ---------- Admin/public visibility toggles ---------- */
+.admin-only { display: none !important; }
+body.admin .admin-only { display: inline-flex !important; }
+body.admin .admin-only.list, body.admin ul.admin-only { display: flex !important; }
+body.admin .public-only { display: none !important; }
+
+.hidden { display: none !important; }

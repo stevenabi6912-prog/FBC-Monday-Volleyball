@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#2f6fed" />
+  <title>FBC Pickup Volleyball</title>
+
+  <!-- PWA / add-to-home-screen -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="FBC Volleyball" />
+
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- ===================== HEADER ===================== -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-ball">🏐</span>
+      <div class="brand-text">
+        <strong>FBC Pickup Volleyball</strong>
+        <small>Monday Night Tournaments</small>
+      </div>
+    </div>
+    <button id="adminBtn" class="admin-btn" type="button">🔓 Admin</button>
+  </header>
+
+  <!-- Admin mode banner (hidden unless unlocked) -->
+  <div id="adminBanner" class="admin-banner hidden">
+    <span>👤 Admin mode — you can edit everything.</span>
+    <button id="lockBtn" type="button">Lock</button>
+  </div>
+
+  <!-- ===================== TABS ===================== -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="tonight">Tonight</button>
+    <button class="tab" data-tab="roster">Roster</button>
+    <button class="tab" data-tab="history">History</button>
+  </nav>
+
+  <main>
+    <!-- ============= TONIGHT ============= -->
+    <section id="tonight" class="view active">
+      <!-- sub-nav for the Monday flow -->
+      <div class="subtabs">
+        <button class="subtab active" data-sub="checkin">Check-in</button>
+        <button class="subtab" data-sub="teams">Teams</button>
+        <button class="subtab" data-sub="schedule">Schedule</button>
+        <button class="subtab" data-sub="standings">Standings</button>
+      </div>
+
+      <!-- Check-in -->
+      <div id="checkin" class="subview active">
+        <div class="row-between">
+          <h2>Check-in <span id="checkinCount" class="pill"></span></h2>
+          <button id="resetBtn" class="danger admin-only" type="button">Reset Night</button>
+        </div>
+        <input id="checkinSearch" class="search" type="search" placeholder="Search roster…" />
+        <p class="hint admin-only">Tap a name to check someone in for tonight.</p>
+        <p class="hint public-only">This list updates live as people are checked in.</p>
+        <ul id="checkinList" class="list"></ul>
+      </div>
+
+      <!-- Teams -->
+      <div id="teams" class="subview">
+        <div class="row-between">
+          <h2>Teams</h2>
+          <div class="admin-only btn-group">
+            <button id="genTeamsBtn" class="primary" type="button">Generate</button>
+            <button id="regenTeamsBtn" type="button">Regenerate</button>
+            <button id="lateBtn" type="button">+ Late arrival</button>
+          </div>
+        </div>
+        <div id="teamsArea"></div>
+      </div>
+
+      <!-- Schedule -->
+      <div id="schedule" class="subview">
+        <h2>Schedule <span class="pill">2 courts · first to 21</span></h2>
+        <div id="scheduleArea"></div>
+      </div>
+
+      <!-- Standings -->
+      <div id="standings" class="subview">
+        <h2>Standings <span class="pill">by wins</span></h2>
+        <div id="standingsArea"></div>
+      </div>
+    </section>
+
+    <!-- ============= ROSTER ============= -->
+    <section id="roster" class="view">
+      <div class="row-between">
+        <h2>Roster <span id="rosterCount" class="pill"></span></h2>
+        <button id="addPlayerBtn" class="primary admin-only" type="button">+ Register</button>
+      </div>
+      <p class="hint public-only">Registration and edits are admin-only.</p>
+      <input id="rosterSearch" class="search" type="search" placeholder="Search players…" />
+      <ul id="rosterList" class="list"></ul>
+    </section>
+
+    <!-- ============= HISTORY ============= -->
+    <section id="history" class="view">
+      <h2>History</h2>
+      <p class="hint">Past Monday nights — attendance, teams, results & standings.</p>
+      <div id="historyArea"></div>
+    </section>
+  </main>
+
+  <!-- ===================== MODALS ===================== -->
+  <div id="modalRoot"></div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- App code (ES module) -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
