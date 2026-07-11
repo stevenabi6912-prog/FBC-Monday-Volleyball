@@ -43,7 +43,7 @@ export function planTeams(n) {
 //  swap passes to even genders while keeping age balance intact.
 //  player: { id, name, birthdate, gender }
 // ---------------------------------------------------------------------------
-export function generateTeams(players, teamNames) {
+export function generateTeams(players, teamNames, pairs = []) {
   const enriched = players.map((p) => ({ ...p, age: ageFromBirthdate(p.birthdate) ?? 0 }));
   const n = enriched.length;
   const { teams: T, subs: S } = planTeams(n);
@@ -77,8 +77,13 @@ export function generateTeams(players, teamNames) {
   // Gender swap passes: even out gender counts without wrecking age averages.
   balanceGenders(buckets);
 
+  // Apply any keep-together constraints (config-driven, id-based) via swaps
+  // that preserve team sizes and roughly preserve age/gender balance.
+  const pinned = enforcePairs(buckets, pairs);
+
   // Build team objects. The sub slot (if the team is over TEAM_SIZE) is the
-  // player closest to the team's median age (keeps starters balanced).
+  // player closest to the team's median age (keeps starters balanced), while
+  // avoiding pinned players so a constrained pair both start when possible.
   return buckets.map((members, i) => {
     let starters = members, subId = null;
     if (members.length > TEAM_SIZE) {
@@ -86,7 +91,7 @@ export function generateTeams(players, teamNames) {
       const median = ages[Math.floor(ages.length / 2)];
       let subIdx = 0, best = Infinity;
       members.forEach((m, idx) => {
-        const d = Math.abs(m.age - median);
+        const d = Math.abs(m.age - median) + (pinned.has(m.id) ? 1000 : 0);
         if (d < best) { best = d; subIdx = idx; }
       });
       subId = members[subIdx].id;
@@ -124,6 +129,41 @@ function balanceGenders(buckets) {
     buckets[hi] = buckets[hi].filter((p) => p.id !== bestM.id).concat(bestF);
     buckets[lo] = buckets[lo].filter((p) => p.id !== bestF.id).concat(bestM);
   }
+}
+
+// Keep-together constraints. `pairs` is [[idA, idB], ...]. For each pair, if
+// the two players landed on different teams, move one to join the other and
+// swap out a compatible teammate (same gender, closest age) so team sizes and
+// balance are preserved. Players not currently present are ignored. Returns the
+// set of pinned ids so sub-selection can avoid benching them.
+function enforcePairs(buckets, pairs) {
+  const pinned = new Set();
+  if (!pairs || !pairs.length) return pinned;
+  const isMale = (g) => (g || "").toLowerCase().startsWith("m");
+  const teamOf = (id) => buckets.findIndex((b) => b.some((p) => p.id === id));
+  const pinnedIds = new Set(pairs.flat());
+
+  for (const [aId, bId] of pairs) {
+    const ta = teamOf(aId), tb = teamOf(bId);
+    if (ta < 0 || tb < 0) continue;          // one of them didn't show up
+    pinned.add(aId); pinned.add(bId);
+    if (ta === tb) continue;                  // already together
+
+    const b = buckets[tb].find((p) => p.id === bId);
+    // pick a teammate of a to swap out — never another pinned player
+    const cands = buckets[ta].filter((p) => !pinnedIds.has(p.id));
+    if (!cands.length) continue;
+    let best = cands[0], bestScore = Infinity;
+    for (const x of cands) {
+      const genderPenalty = isMale(x.gender) === isMale(b.gender) ? 0 : 5;
+      const score = genderPenalty + Math.abs((x.age || 0) - (b.age || 0));
+      if (score < bestScore) { bestScore = score; best = x; }
+    }
+    // swap: b joins team ta, best moves to team tb
+    buckets[ta] = buckets[ta].filter((p) => p.id !== best.id).concat(b);
+    buckets[tb] = buckets[tb].filter((p) => p.id !== bId).concat(best);
+  }
+  return pinned;
 }
 
 // Small deterministic string hash so team ids are stable-ish per name.

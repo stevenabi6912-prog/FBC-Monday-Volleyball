@@ -41,6 +41,7 @@ const state = {
   tonight: { checkedIn: [], teams: [], schedule: { rounds: [] }, playStarted: false },
   history: [],                 // [{id, date, ...}]
   usedTeamNames: [],
+  pairs: [],                   // optional keep-together constraints [[idA, idB]]
   checkinSearch: "",
   rosterSearch: "",
 };
@@ -157,7 +158,11 @@ function startListeners() {
   }, (err) => console.error("tonight listener", err));
 
   onSnapshot(metaRef(), (snap) => {
-    state.usedTeamNames = (snap.exists() && snap.data().usedTeamNames) || [];
+    const data = snap.exists() ? snap.data() : {};
+    state.usedTeamNames = data.usedTeamNames || [];
+    // Optional keep-together constraints, stored as [{a,b}] in the meta doc
+    // (kept out of the public source). Normalised here to [[a,b], ...].
+    state.pairs = (data.pairs || []).map((p) => [p.a, p.b]).filter((p) => p[0] && p[1]);
   }, (err) => console.error("meta listener", err));
 
   onSnapshot(query(historyCol(), orderBy("createdAt", "desc")), (snap) => {
@@ -329,7 +334,7 @@ async function doGenerateTeams(isRegen) {
     okLabel: isRegen ? "Regenerate" : "Generate",
     onOk: async () => {
       const names = generateTeamNames(plan.teams, state.usedTeamNames);
-      const teams = generateTeams(checkedPlayers, names);
+      const teams = generateTeams(checkedPlayers, names, state.pairs);
       const schedule = buildSchedule(teams);
       try {
         await saveTonight({ teams, schedule, playStarted: false, generatedAt: serverTimestamp() });
