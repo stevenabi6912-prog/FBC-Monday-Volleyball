@@ -124,7 +124,7 @@ Branch: `main` / `(root)` → Save.** Wait ~1 minute; your app is live at
    (use before games start). **+ Late arrival** slots someone in *after* play starts — the app
    recommends "slot into a team" vs "form a new team" based on how many loose players there are,
    and a new team is auto-added to the remaining schedule without touching played games.
-4. **Tonight → Schedule** — round-robin across 2 courts, first to 21. Admin taps **Enter score**.
+4. **Tonight → Schedule** — round-robin across 2 courts, first to 25 (win by 2). Admin taps **Enter score**.
 5. **Tonight → Standings** — ranked by wins; ties share a rank (no tiebreaker).
 6. **Reset Night** (admin, re-enter passcode) — **archives tonight to History**, then clears
    check-ins and tonight's teams/schedule/scores. **Roster and History are never cleared.**

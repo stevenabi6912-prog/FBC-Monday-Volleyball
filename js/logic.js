@@ -6,8 +6,20 @@
 
 export const TEAM_SIZE = 6;          // starters per team
 export const SUB_PER_TEAM = 1;       // max subs per team (capacity = 7)
-export const SCORE_TARGET = 21;      // first to 21, no win-by-2
+export const SCORE_TARGET = 25;      // first to 25…
+export const WIN_BY = 2;             // …win by 2
 export const COURTS = 2;
+
+// Validate a final match score for "first to SCORE_TARGET, win by WIN_BY".
+// Returns an error message string, or null if the score is valid.
+export function scoreError(a, b) {
+  if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) return "Enter both scores.";
+  if (a === b) return "No ties — someone has to win.";
+  const w = Math.max(a, b), l = Math.min(a, b);
+  if (w < SCORE_TARGET) return `Winner must reach ${SCORE_TARGET}.`;
+  if (w - l < WIN_BY) return `Must win by ${WIN_BY} (e.g. ${SCORE_TARGET}-${SCORE_TARGET - WIN_BY}).`;
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 //  Age

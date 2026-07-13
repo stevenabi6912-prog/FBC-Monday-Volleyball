@@ -12,7 +12,7 @@ import { firebaseConfig, ADMIN_PASSCODE } from "./firebase-config.js";
 import {
   ageFromBirthdate, generateTeams, generateTeamNames, buildSchedule,
   appendTeamToSchedule, computeStandings, planTeams, bestTeamForLateArrival,
-  loosePlayerCount, SCORE_TARGET, skillNum, assignRefs,
+  loosePlayerCount, SCORE_TARGET, WIN_BY, skillNum, assignRefs, scoreError,
 } from "./logic.js";
 
 // ---------------------------------------------------------------------------
@@ -620,7 +620,7 @@ function openScoreEntry(round, match, nameOf) {
   openModal({
     title: `${nameOf(match.aTeamId)} vs ${nameOf(match.bTeamId)}`,
     body: `
-      <p class="hint">First to ${SCORE_TARGET}. Enter the final score.</p>
+      <p class="hint">First to ${SCORE_TARGET}, win by ${WIN_BY}. Enter the final score.</p>
       <label>${esc(nameOf(match.aTeamId))}</label>
       <input id="scA" type="number" inputmode="numeric" min="0" value="${match.scoreA ?? ""}" />
       <label>${esc(nameOf(match.bTeamId))}</label>
@@ -628,8 +628,8 @@ function openScoreEntry(round, match, nameOf) {
     okLabel: "Save score",
     onOk: async () => {
       const a = parseInt($("#scA").value, 10), b = parseInt($("#scB").value, 10);
-      if (isNaN(a) || isNaN(b)) { toast("Enter both scores"); return false; }
-      if (a === b) { toast("No ties — someone has to win"); return false; }
+      const err = scoreError(a, b);
+      if (err) { toast(err); return false; }
       // deep-update the schedule
       const sched = JSON.parse(JSON.stringify(state.tonight.schedule));
       const rr = sched.rounds.find((x) => x.round === round.round);
@@ -670,8 +670,8 @@ function openCustomGame() {
       let sa = null, sb = null;
       if (saR !== "" || sbR !== "") {
         sa = parseInt(saR, 10); sb = parseInt(sbR, 10);
-        if (isNaN(sa) || isNaN(sb)) { toast("Enter both scores, or leave both blank"); return false; }
-        if (sa === sb) { toast("No ties — someone has to win"); return false; }
+        const err = scoreError(sa, sb);
+        if (err) { toast(err); return false; }
       }
       try { await addCustomGame(a, b, sa, sb); toast("Game added ✔"); gotoSub("schedule"); }
       catch (e) { console.error(e); toast("Failed to add game"); return false; }
