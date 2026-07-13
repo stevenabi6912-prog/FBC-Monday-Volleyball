@@ -322,6 +322,34 @@ export function appendTeamToSchedule(schedule, existingTeamIds, newTeamId) {
 }
 
 // ---------------------------------------------------------------------------
+//  Referee assignment. Distribute refs (playerIds reffing tonight) across the
+//  matches, avoiding the same ref on both concurrent courts of a round when
+//  possible. overwrite=true redistributes everything; otherwise only matches
+//  with no ref yet are filled (keeps manual picks and already-played games).
+// ---------------------------------------------------------------------------
+export function assignRefs(schedule, refPool, overwrite = false) {
+  const pool = refPool || [];
+  let ptr = 0;
+  (schedule.rounds || []).forEach((r) => {
+    const used = new Set();
+    if (!overwrite) r.matches.forEach((m) => { if (!m.bye && m.refId) used.add(m.refId); });
+    r.matches.forEach((m) => {
+      if (m.bye) return;
+      if (!overwrite && m.refId) return;      // keep existing assignment
+      if (!pool.length) { if (overwrite) m.refId = null; return; }
+      let pick = null;
+      for (let k = 0; k < pool.length; k++) {
+        const cand = pool[(ptr + k) % pool.length];
+        if (!used.has(cand)) { pick = cand; ptr = (ptr + k + 1) % pool.length; break; }
+      }
+      if (pick == null) { pick = pool[ptr % pool.length]; ptr = (ptr + 1) % pool.length; }
+      m.refId = pick; used.add(pick);
+    });
+  });
+  return schedule;
+}
+
+// ---------------------------------------------------------------------------
 //  Standings — rank by wins only. Ties share a rank (no tiebreaker).
 // ---------------------------------------------------------------------------
 export function computeStandings(teams, schedule) {

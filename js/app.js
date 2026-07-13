@@ -12,7 +12,7 @@ import { firebaseConfig, ADMIN_PASSCODE } from "./firebase-config.js";
 import {
   ageFromBirthdate, generateTeams, generateTeamNames, buildSchedule,
   appendTeamToSchedule, computeStandings, planTeams, bestTeamForLateArrival,
-  loosePlayerCount, SCORE_TARGET, skillNum,
+  loosePlayerCount, SCORE_TARGET, skillNum, assignRefs,
 } from "./logic.js";
 
 // ---------------------------------------------------------------------------
@@ -38,7 +38,7 @@ const historyCol = () => collection(db, "history");
 const state = {
   admin: false,
   players: [],                 // [{id, name, birthdate, gender}]
-  tonight: { checkedIn: [], teams: [], schedule: { rounds: [] }, playStarted: false },
+  tonight: { checkedIn: [], refs: [], teams: [], schedule: { rounds: [] }, playStarted: false },
   history: [],                 // [{id, date, ...}]
   usedTeamNames: [],
   pairs: [],                   // optional keep-together constraints [[idA, idB]]
@@ -149,6 +149,7 @@ function startListeners() {
     const data = snap.exists() ? snap.data() : {};
     state.tonight = {
       checkedIn: data.checkedIn || [],
+      refs: data.refs || [],
       teams: data.teams || [],
       schedule: data.schedule || { rounds: [] },
       playStarted: !!data.playStarted,
@@ -203,7 +204,8 @@ function openPlayerForm(existing) {
         <option value="1" ${sk === 1 ? "selected" : ""}>1 — Not good</option>
         <option value="2" ${sk === 2 ? "selected" : ""}>2 — OK</option>
         <option value="3" ${sk === 3 ? "selected" : ""}>3 — Good</option>
-      </select>`,
+      </select>
+      <label class="checkline"><input id="pCanRef" type="checkbox" ${p.canRef ? "checked" : ""} /> Can referee <span class="refbadge">REF</span></label>`,
     okLabel: existing ? "Save" : "Register",
     afterOpen: () => {
       const nameInput = $("#pName");
@@ -219,11 +221,12 @@ function openPlayerForm(existing) {
       const birthdate = $("#pDob").value;
       const gender = $("#pGender").value;
       const skill = skillNum($("#pSkill").value);
+      const canRef = $("#pCanRef").checked;
       if (!name) { toast("Name is required"); return false; }
       if (!birthdate) { toast("Birthdate is required"); return false; }
       try {
-        if (existing) await updateDoc(doc(db, "players", existing.id), { name, birthdate, gender, skill });
-        else await addDoc(playersCol(), { name, birthdate, gender, skill, createdAt: serverTimestamp() });
+        if (existing) await updateDoc(doc(db, "players", existing.id), { name, birthdate, gender, skill, canRef });
+        else await addDoc(playersCol(), { name, birthdate, gender, skill, canRef, createdAt: serverTimestamp() });
         toast(existing ? "Player updated" : "Player registered ✔");
       } catch (e) { console.error(e); toast("Save failed — check config"); return false; }
     },
@@ -261,7 +264,7 @@ function renderRoster() {
     const li = el("li", "list-item");
     li.innerHTML = `
       <div class="grow">
-        <div class="name">${esc(p.name)} ${skillBadge(p)}</div>
+        <div class="name">${esc(p.name)} ${skillBadge(p)} ${p.canRef ? '<span class="refbadge">REF</span>' : ""}</div>
         <div class="meta">${age != null ? "Age " + age : "—"} · ${esc(p.gender || "")}</div>
       </div>`;
     if (state.admin) {
@@ -280,41 +283,75 @@ function renderRoster() {
 // ===========================================================================
 $("#checkinSearch").addEventListener("input", (e) => { state.checkinSearch = e.target.value.toLowerCase(); renderCheckin(); });
 
+// Playing and reffing are mutually exclusive: checking someone in to play
+// removes them from the ref pool, and vice versa.
 async function toggleCheckin(id) {
   if (!requireAdmin()) return;
-  const set = new Set(state.tonight.checkedIn);
-  set.has(id) ? set.delete(id) : set.add(id);
-  try { await saveTonight({ checkedIn: [...set] }); }
+  const play = new Set(state.tonight.checkedIn), refs = new Set(state.tonight.refs);
+  if (play.has(id)) play.delete(id);
+  else { play.add(id); refs.delete(id); }
+  try { await saveTonight({ checkedIn: [...play], refs: [...refs] }); }
   catch (e) { console.error(e); toast("Check-in failed"); }
+}
+async function toggleRef(id) {
+  if (!requireAdmin()) return;
+  const play = new Set(state.tonight.checkedIn), refs = new Set(state.tonight.refs);
+  if (refs.has(id)) refs.delete(id);
+  else { refs.add(id); play.delete(id); }   // reffing => not playing
+  try { await saveTonight({ checkedIn: [...play], refs: [...refs] }); }
+  catch (e) { console.error(e); toast("Update failed"); }
 }
 
 function renderCheckin() {
   const list = $("#checkinList");
-  const checked = new Set(state.tonight.checkedIn);
-  $("#checkinCount").textContent = checked.size + " in";
+  const playing = new Set(state.tonight.checkedIn);
+  const reffing = new Set(state.tonight.refs);
+  $("#checkinCount").textContent = playing.size + " in";
   const term = state.checkinSearch;
-
-  // Public view shows only who's checked in; admin sees the whole roster to toggle.
-  let source = state.players;
-  if (!state.admin) source = state.players.filter((p) => checked.has(p.id));
-  const items = source.filter((p) => p.name.toLowerCase().includes(term));
+  const byId = playersById();
 
   list.innerHTML = "";
-  if (!state.admin && !checked.size) { list.appendChild(emptyState("🙌", "No one checked in yet", "Names appear here as they arrive.")); return; }
+
+  // "Reffing tonight" summary (shown to everyone).
+  if (reffing.size) {
+    const names = [...reffing].map((id) => byId[id] && byId[id].name).filter(Boolean).sort();
+    const sum = el("li", "ref-summary", `<span class="refbadge">REF</span> <strong>Reffing tonight:</strong> ${names.map(esc).join(", ")}`);
+    list.appendChild(sum);
+  }
+
+  // Admin sees the whole roster to toggle; public sees only who's playing.
+  let source = state.players;
+  if (!state.admin) source = state.players.filter((p) => playing.has(p.id));
+  const items = source.filter((p) => p.name.toLowerCase().includes(term));
+
   if (state.admin && !state.players.length) { list.appendChild(emptyState("🏐", "Roster is empty", "Register players first (Roster tab).")); return; }
-  if (!items.length) { list.appendChild(emptyState("🔎", "No matches", "Try a different search.")); return; }
+  if (!items.length) {
+    if (!reffing.size) list.appendChild(emptyState(term ? "🔎" : "🙌", term ? "No matches" : "No one checked in yet", term ? "Try a different search." : "Names appear here as they arrive."));
+    return;
+  }
 
   items.forEach((p) => {
     const age = ageFromBirthdate(p.birthdate);
-    const on = checked.has(p.id);
-    const li = el("li", "list-item" + (on ? " checked" : ""));
+    const isPlay = playing.has(p.id);
+    const isRef = reffing.has(p.id);
+    const li = el("li", "list-item" + (isPlay ? " checked" : "") + (isRef ? " reffing" : ""));
     li.innerHTML = `
       <div class="check">✓</div>
       <div class="grow">
-        <div class="name">${esc(p.name)} ${skillBadge(p)}</div>
-        <div class="meta">${age != null ? "Age " + age : "—"} · ${esc(p.gender || "")}</div>
+        <div class="name">${esc(p.name)} ${skillBadge(p)} ${p.canRef ? '<span class="refbadge">REF</span>' : ""}</div>
+        <div class="meta">${age != null ? "Age " + age : "—"} · ${esc(p.gender || "")}${isRef ? ' · <strong>reffing</strong>' : ""}</div>
       </div>`;
-    if (state.admin) { li.style.cursor = "pointer"; li.addEventListener("click", () => toggleCheckin(p.id)); }
+    if (state.admin) {
+      li.style.cursor = "pointer";
+      li.addEventListener("click", () => toggleCheckin(p.id));
+      // Ref option offered ONLY when the person isn't checked in to play.
+      if (p.canRef && !isPlay) {
+        const rb = el("button", "ref-toggle" + (isRef ? " on" : ""), isRef ? "Reffing ✓" : "Ref");
+        rb.title = "Mark as reffing tonight (not playing)";
+        rb.addEventListener("click", (e) => { e.stopPropagation(); toggleRef(p.id); });
+        li.appendChild(rb);
+      }
+    }
     list.appendChild(li);
   });
 }
@@ -344,6 +381,7 @@ async function doGenerateTeams(isRegen) {
       const names = generateTeamNames(plan.teams, state.usedTeamNames);
       const teams = generateTeams(checkedPlayers, names, state.pairs);
       const schedule = buildSchedule(teams);
+      assignRefs(schedule, state.tonight.refs);   // auto-distribute tonight's refs
       try {
         await saveTonight({ teams, schedule, playStarted: false, generatedAt: serverTimestamp() });
         await reserveTeamNames(names);
@@ -473,6 +511,7 @@ async function formNewTeamWith(player) {
   };
   teams.push(newTeam);
   const schedule = appendTeamToSchedule(state.tonight.schedule, teams.filter((t) => t.id !== newTeam.id).map((t) => t.id), newTeam.id);
+  assignRefs(schedule, state.tonight.refs);   // fill refs for the new matches (keeps existing)
   await saveTonight({ teams, schedule });
   await reserveTeamNames(names);
   toast(`New team "${newTeam.name}" added & scheduled ✔`);
@@ -482,11 +521,38 @@ async function formNewTeamWith(player) {
 // ===========================================================================
 //  SCHEDULE + SCORE ENTRY
 // ===========================================================================
+
+async function setMatchRef(round, match, refId) {
+  if (!requireAdmin()) return;
+  const sched = JSON.parse(JSON.stringify(state.tonight.schedule));
+  const rr = sched.rounds.find((x) => x.round === round.round);
+  const mm = rr && rr.matches.find((x) => x.id === match.id);
+  if (!mm) return;
+  mm.refId = refId || null;
+  try { await saveTonight({ schedule: sched }); }
+  catch (e) { console.error(e); toast("Ref update failed"); }
+}
+
+// Auto-assign / redistribute refs across the whole schedule (admin button).
+$("#assignRefsBtn").addEventListener("click", async () => {
+  if (!requireAdmin()) return;
+  const sched = state.tonight.schedule;
+  if (!sched || !sched.rounds || !sched.rounds.length) { toast("No schedule yet"); return; }
+  if (!state.tonight.refs.length) { toast("No refs marked — set ref-only people in Check-in"); return; }
+  const copy = JSON.parse(JSON.stringify(sched));
+  assignRefs(copy, state.tonight.refs, true);
+  try { await saveTonight({ schedule: copy }); toast("Refs assigned ✔"); }
+  catch (e) { console.error(e); toast("Failed"); }
+});
+
 function renderSchedule() {
   const area = $("#scheduleArea");
   const teams = state.tonight.teams || [];
   const sched = state.tonight.schedule || { rounds: [] };
+  const byId = playersById();
+  const refPool = state.tonight.refs || [];
   const nameOf = (id) => (teams.find((t) => t.id === id) || {}).name || "—";
+  const refNameOf = (id) => (byId[id] && byId[id].name) || "—";
   area.innerHTML = "";
   if (!sched.rounds || !sched.rounds.length) {
     area.appendChild(emptyState("📅", "No schedule yet", state.admin ? "Generate teams to build the round-robin." : "Appears once teams are set."));
@@ -518,6 +584,21 @@ function renderSchedule() {
           <span class="sc">${m.played ? m.scoreA : "–"} <span class="vs">vs</span> ${m.played ? m.scoreB : "–"}</span>
           <span class="t right ${bWin ? "winner" : ""}">${esc(nameOf(m.bTeamId))}</span>
         </div>`;
+      // Referee row: admin picks from tonight's ref pool; everyone sees who's reffing.
+      if (state.admin) {
+        const refRow = el("div", "match-ref");
+        const sel = el("select", "ref-select");
+        let opts = `<option value="">— no ref —</option>` +
+          refPool.map((id) => `<option value="${id}" ${m.refId === id ? "selected" : ""}>${esc(refNameOf(id))}</option>`).join("");
+        if (m.refId && !refPool.includes(m.refId)) opts += `<option value="${m.refId}" selected>${esc(refNameOf(m.refId))} (not reffing)</option>`;
+        sel.innerHTML = opts;
+        sel.addEventListener("change", () => setMatchRef(r, m, sel.value));
+        refRow.innerHTML = `<span class="ref-label">Ref</span>`;
+        refRow.appendChild(sel);
+        mDiv.appendChild(refRow);
+      } else if (m.refId) {
+        mDiv.appendChild(el("div", "match-ref", `<span class="ref-label">Ref</span> ${esc(refNameOf(m.refId))}`));
+      }
       if (state.admin) {
         const btn = el("button", "primary enter", m.played ? "Edit score" : "Enter score");
         btn.addEventListener("click", () => openScoreEntry(r, m, nameOf));
@@ -717,7 +798,7 @@ async function archiveAndReset() {
     });
   }
   // clear tonight (roster & history untouched)
-  await setDoc(tonightRef(), { checkedIn: [], teams: [], schedule: { rounds: [] }, playStarted: false, generatedAt: null }, { merge: true });
+  await setDoc(tonightRef(), { checkedIn: [], refs: [], teams: [], schedule: { rounds: [] }, playStarted: false, generatedAt: null }, { merge: true });
 }
 
 // ===========================================================================
