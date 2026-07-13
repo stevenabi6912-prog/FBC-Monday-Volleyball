@@ -5,7 +5,7 @@
 //  We use a "network-first, cache fallback" strategy for the app shell, and
 //  we never intercept Firebase/Google requests at all.
 // ============================================================================
-const CACHE = "fbc-volley-v6";
+const CACHE = "fbc-volley-v7";
 const SHELL = [
   "./",
   "./index.html",

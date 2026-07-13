@@ -283,22 +283,21 @@ function renderRoster() {
 // ===========================================================================
 $("#checkinSearch").addEventListener("input", (e) => { state.checkinSearch = e.target.value.toLowerCase(); renderCheckin(); });
 
-// Playing and reffing are mutually exclusive: checking someone in to play
-// removes them from the ref pool, and vice versa.
+// Playing and reffing are INDEPENDENT: a person can play, ref, or both.
+// (When both, the ref assignment won't schedule them to ref a round their team
+//  is playing — see assignRefs.)
 async function toggleCheckin(id) {
   if (!requireAdmin()) return;
-  const play = new Set(state.tonight.checkedIn), refs = new Set(state.tonight.refs);
-  if (play.has(id)) play.delete(id);
-  else { play.add(id); refs.delete(id); }
-  try { await saveTonight({ checkedIn: [...play], refs: [...refs] }); }
+  const play = new Set(state.tonight.checkedIn);
+  play.has(id) ? play.delete(id) : play.add(id);
+  try { await saveTonight({ checkedIn: [...play] }); }
   catch (e) { console.error(e); toast("Check-in failed"); }
 }
 async function toggleRef(id) {
   if (!requireAdmin()) return;
-  const play = new Set(state.tonight.checkedIn), refs = new Set(state.tonight.refs);
-  if (refs.has(id)) refs.delete(id);
-  else { refs.add(id); play.delete(id); }   // reffing => not playing
-  try { await saveTonight({ checkedIn: [...play], refs: [...refs] }); }
+  const refs = new Set(state.tonight.refs);
+  refs.has(id) ? refs.delete(id) : refs.add(id);
+  try { await saveTonight({ refs: [...refs] }); }
   catch (e) { console.error(e); toast("Update failed"); }
 }
 
@@ -344,10 +343,10 @@ function renderCheckin() {
     if (state.admin) {
       li.style.cursor = "pointer";
       li.addEventListener("click", () => toggleCheckin(p.id));
-      // Ref option offered ONLY when the person isn't checked in to play.
-      if (p.canRef && !isPlay) {
+      // Ref toggle for any ref-capable person — independent of whether they play.
+      if (p.canRef) {
         const rb = el("button", "ref-toggle" + (isRef ? " on" : ""), isRef ? "Reffing ✓" : "Ref");
-        rb.title = "Mark as reffing tonight (not playing)";
+        rb.title = "Toggle whether they're available to referee tonight";
         rb.addEventListener("click", (e) => { e.stopPropagation(); toggleRef(p.id); });
         li.appendChild(rb);
       }
@@ -381,7 +380,7 @@ async function doGenerateTeams(isRegen) {
       const names = generateTeamNames(plan.teams, state.usedTeamNames);
       const teams = generateTeams(checkedPlayers, names, state.pairs);
       const schedule = buildSchedule(teams);
-      assignRefs(schedule, state.tonight.refs);   // auto-distribute tonight's refs
+      assignRefs(schedule, state.tonight.refs, teams, true);   // auto-distribute tonight's refs
       try {
         await saveTonight({ teams, schedule, playStarted: false, generatedAt: serverTimestamp() });
         await reserveTeamNames(names);
@@ -511,7 +510,7 @@ async function formNewTeamWith(player) {
   };
   teams.push(newTeam);
   const schedule = appendTeamToSchedule(state.tonight.schedule, teams.filter((t) => t.id !== newTeam.id).map((t) => t.id), newTeam.id);
-  assignRefs(schedule, state.tonight.refs);   // fill refs for the new matches (keeps existing)
+  assignRefs(schedule, state.tonight.refs, teams);   // fill refs for the new matches (keeps existing)
   await saveTonight({ teams, schedule });
   await reserveTeamNames(names);
   toast(`New team "${newTeam.name}" added & scheduled ✔`);
@@ -540,7 +539,7 @@ $("#assignRefsBtn").addEventListener("click", async () => {
   if (!sched || !sched.rounds || !sched.rounds.length) { toast("No schedule yet"); return; }
   if (!state.tonight.refs.length) { toast("No refs marked — set ref-only people in Check-in"); return; }
   const copy = JSON.parse(JSON.stringify(sched));
-  assignRefs(copy, state.tonight.refs, true);
+  assignRefs(copy, state.tonight.refs, state.tonight.teams, true);
   try { await saveTonight({ schedule: copy }); toast("Refs assigned ✔"); }
   catch (e) { console.error(e); toast("Failed"); }
 });

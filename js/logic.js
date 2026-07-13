@@ -322,27 +322,36 @@ export function appendTeamToSchedule(schedule, existingTeamIds, newTeamId) {
 }
 
 // ---------------------------------------------------------------------------
-//  Referee assignment. Distribute refs (playerIds reffing tonight) across the
-//  matches, avoiding the same ref on both concurrent courts of a round when
-//  possible. overwrite=true redistributes everything; otherwise only matches
-//  with no ref yet are filled (keeps manual picks and already-played games).
+//  Referee assignment. Distribute refs (playerIds available to ref tonight)
+//  across matches. A ref may also be a player: they're only eligible to ref a
+//  round in which their own team is NOT playing (you can't ref while you're on
+//  the court, and the two courts of a round are concurrent). We also avoid the
+//  same ref on both courts of a round. overwrite=true redistributes everything;
+//  otherwise only matches with no ref yet are filled (keeps manual picks and
+//  already-played games).
+//  `teams` (optional) is the tonight teams array, used to know who's playing.
 // ---------------------------------------------------------------------------
-export function assignRefs(schedule, refPool, overwrite = false) {
+export function assignRefs(schedule, refPool, teams = [], overwrite = false) {
   const pool = refPool || [];
+  const teamOfPlayer = {};
+  (teams || []).forEach((t) => {
+    [...(t.starterIds || []), t.subId].filter(Boolean).forEach((id) => { teamOfPlayer[id] = t.id; });
+  });
   let ptr = 0;
   (schedule.rounds || []).forEach((r) => {
+    // teams on the court this round; a player-ref on one of them can't ref now
+    const playingTeams = new Set();
+    r.matches.forEach((m) => { if (!m.bye) { playingTeams.add(m.aTeamId); playingTeams.add(m.bTeamId); } });
+    const roundEligible = pool.filter((id) => !playingTeams.has(teamOfPlayer[id]));
     const used = new Set();
     if (!overwrite) r.matches.forEach((m) => { if (!m.bye && m.refId) used.add(m.refId); });
     r.matches.forEach((m) => {
       if (m.bye) return;
-      if (!overwrite && m.refId) return;      // keep existing assignment
-      if (!pool.length) { if (overwrite) m.refId = null; return; }
-      let pick = null;
-      for (let k = 0; k < pool.length; k++) {
-        const cand = pool[(ptr + k) % pool.length];
-        if (!used.has(cand)) { pick = cand; ptr = (ptr + k + 1) % pool.length; break; }
-      }
-      if (pick == null) { pick = pool[ptr % pool.length]; ptr = (ptr + 1) % pool.length; }
+      if (!overwrite && m.refId) return;                 // keep existing assignment
+      const avail = roundEligible.filter((id) => !used.has(id));
+      if (!avail.length) { if (overwrite) m.refId = null; return; }  // nobody free -> no ref
+      const pick = avail[ptr % avail.length];
+      ptr++;
       m.refId = pick; used.add(pick);
     });
   });
