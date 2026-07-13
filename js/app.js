@@ -803,25 +803,36 @@ async function archiveAndReset() {
 // ===========================================================================
 //  HISTORY
 // ===========================================================================
+function prettyDate(iso) {
+  if (!iso) return "Unknown date";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
 function renderHistory() {
   const area = $("#historyArea");
   area.innerHTML = "";
   if (!state.history.length) { area.appendChild(emptyState("📜", "No history yet", "Past Mondays show up here after you Reset the night.")); return; }
-  state.history.forEach((h) => {
+  state.history.forEach((h, i) => {
+    const champ = (h.standings && h.standings[0]) ? h.standings[0].name : null;
     const card = el("details", "hist-card");
-    const champ = (h.standings && h.standings[0]) ? h.standings[0].name : "—";
+    if (i === 0) card.open = true;   // newest night expanded by default
     const sum = el("summary");
-    sum.innerHTML = `${esc(h.date || "Unknown date")} · ${(h.attendance || []).length} played · 🏆 ${esc(champ)}`;
+    sum.innerHTML = `
+      <div class="hist-head">
+        <div class="hist-date">
+          <span class="hist-day">${esc(prettyDate(h.date))}</span>
+          <span class="hist-stats">${(h.attendance || []).length} played · ${(h.teams || []).length} teams</span>
+        </div>
+        ${champ ? `<span class="hist-champ">🏆 ${esc(champ)}</span>` : ""}
+        <span class="hist-caret">▾</span>
+      </div>`;
     card.appendChild(sum);
     const body = el("div", "hist-body");
-    body.innerHTML = `
-      ${histTeams(h)}
-      ${histStandings(h)}
-      ${histMatches(h)}
-      ${histAttendance(h)}`;
+    body.innerHTML = histStandings(h) + histResults(h) + histTeams(h) + histAttendance(h);
     if (state.admin) {
-      const del = el("button", "danger", "🗑 Delete this night");
-      del.style.marginTop = "12px";
+      const del = el("button", "danger hist-del", "🗑 Delete this night");
       del.addEventListener("click", (e) => { e.preventDefault(); confirmDeleteHistory(h); });
       body.appendChild(del);
     }
@@ -842,23 +853,48 @@ function confirmDeleteHistory(h) {
     },
   });
 }
-function histTeams(h) {
-  if (!h.teams || !h.teams.length) return "";
-  return `<h4>Teams</h4>` + h.teams.map((t) =>
-    `<div><strong>${esc(t.name)}</strong>: ${esc((t.starters || []).join(", "))}${t.sub ? " (sub: " + esc(t.sub) + ")" : ""}</div>`).join("");
-}
 function histStandings(h) {
   if (!h.standings || !h.standings.length) return "";
-  return `<h4>Final standings</h4>` + h.standings.map((s) => `<div>${s.rank}. ${esc(s.name)} — ${s.wins}W / ${s.losses}L</div>`).join("");
+  const medal = (r) => (r === 1 ? "🥇" : r === 2 ? "🥈" : r === 3 ? "🥉" : r);
+  const rows = h.standings.map((s) => `
+    <div class="hs-row${s.rank === 1 ? " champ" : ""}">
+      <span class="hs-rank">${medal(s.rank)}</span>
+      <span class="hs-name">${esc(s.name)}</span>
+      <span class="hs-wl">${s.wins}<span class="hs-dim">W</span> ${s.losses}<span class="hs-dim">L</span></span>
+    </div>`).join("");
+  return `<div class="hist-section"><h4>Final standings</h4><div class="hs-list">${rows}</div></div>`;
 }
-function histMatches(h) {
+function histResults(h) {
   const played = (h.matches || []).filter((m) => m.played);
   if (!played.length) return "";
-  return `<h4>Results</h4>` + played.map((m) => `<div>R${m.round} · ${esc(m.a)} ${m.scoreA}–${m.scoreB} ${esc(m.b)}</div>`).join("");
+  const byRound = {};
+  played.forEach((m) => { (byRound[m.round] = byRound[m.round] || []).push(m); });
+  const html = Object.keys(byRound).sort((a, b) => a - b).map((rn) => {
+    const rows = byRound[rn].map((m) => {
+      const aWin = m.scoreA > m.scoreB, bWin = m.scoreB > m.scoreA;
+      return `<div class="hr-match">
+        <span class="hr-team ${aWin ? "win" : ""}">${esc(m.a)}</span>
+        <span class="hr-score">${m.scoreA}<span class="hr-dash">–</span>${m.scoreB}</span>
+        <span class="hr-team right ${bWin ? "win" : ""}">${esc(m.b)}</span>
+      </div>`;
+    }).join("");
+    return `<div class="hr-round"><div class="hr-rlabel">Round ${rn}</div>${rows}</div>`;
+  }).join("");
+  return `<div class="hist-section"><h4>Results</h4>${html}</div>`;
+}
+function histTeams(h) {
+  if (!h.teams || !h.teams.length) return "";
+  const cards = h.teams.map((t) => `
+    <div class="ht-card">
+      <div class="ht-name">${esc(t.name)}</div>
+      <div class="ht-players">${(t.starters || []).map(esc).join(", ")}${t.sub ? ` <span class="ht-sub">+ ${esc(t.sub)} (sub)</span>` : ""}</div>
+    </div>`).join("");
+  return `<div class="hist-section"><h4>Teams</h4><div class="ht-grid">${cards}</div></div>`;
 }
 function histAttendance(h) {
   if (!h.attendance || !h.attendance.length) return "";
-  return `<h4>Attendance (${h.attendance.length})</h4><div>${h.attendance.map((a) => esc(a.name)).join(", ")}</div>`;
+  const chips = h.attendance.map((a) => `<span class="att-chip">${esc(a.name)}</span>`).join("");
+  return `<div class="hist-section"><h4>Attendance · ${h.attendance.length}</h4><div class="att-list">${chips}</div></div>`;
 }
 
 // ===========================================================================
