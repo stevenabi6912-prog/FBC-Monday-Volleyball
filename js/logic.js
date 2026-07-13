@@ -37,14 +37,23 @@ export function planTeams(n) {
   return { teams, subs, bench };
 }
 
+// Skill rating is 1 (not good), 2 (ok), 3 (good). Missing/invalid -> 2 (neutral).
+export const SKILL_DEFAULT = 2;
+export function skillNum(v) {
+  const n = Number(v);
+  return n === 1 || n === 2 || n === 3 ? n : SKILL_DEFAULT;
+}
+
 // ---------------------------------------------------------------------------
 //  Generate balanced teams from a list of checked-in players.
-//  Strategy (per spec): snake draft by age to spread ages, then gender
-//  swap passes to even genders while keeping age balance intact.
-//  player: { id, name, birthdate, gender }
+//  Priority order: SKILL first (balance total skill across teams), then gender,
+//  then age. We snake-draft by skill so every team gets a comparable mix of
+//  1s/2s/3s, then do gender swaps restricted to equal-skill players so the skill
+//  balance is never disturbed.
+//  player: { id, name, birthdate, gender, skill }
 // ---------------------------------------------------------------------------
 export function generateTeams(players, teamNames, pairs = []) {
-  const enriched = players.map((p) => ({ ...p, age: ageFromBirthdate(p.birthdate) ?? 0 }));
+  const enriched = players.map((p) => ({ ...p, age: ageFromBirthdate(p.birthdate) ?? 0, skill: skillNum(p.skill) }));
   const n = enriched.length;
   const { teams: T, subs: S } = planTeams(n);
   if (T === 0) return [];
@@ -52,8 +61,9 @@ export function generateTeams(players, teamNames, pairs = []) {
   // Capacities: the first S teams get a sub slot (7), the rest are 6.
   const capacity = Array.from({ length: T }, (_, i) => TEAM_SIZE + (i < S ? SUB_PER_TEAM : 0));
 
-  // Sort oldest -> youngest so the snake spreads the age range.
-  const sorted = [...enriched].sort((a, b) => b.age - a.age);
+  // Sort by skill (high -> low) first so the snake balances total skill across
+  // teams; tie-break by age so ages also spread within each skill tier.
+  const sorted = [...enriched].sort((a, b) => b.skill - a.skill || b.age - a.age);
 
   const buckets = Array.from({ length: T }, () => []);
   let dir = 1, t = 0;
@@ -106,26 +116,29 @@ export function generateTeams(players, teamNames, pairs = []) {
   });
 }
 
-// In-place gender balancing across buckets via same-age-ish swaps.
+// In-place gender balancing across buckets. Swaps are restricted to players of
+// EQUAL skill so the (higher-priority) skill balance is never disturbed.
 function balanceGenders(buckets) {
   const maleCount = (b) => b.filter((p) => (p.gender || "").toLowerCase().startsWith("m")).length;
-  for (let pass = 0; pass < 12; pass++) {
+  for (let pass = 0; pass < 16; pass++) {
     const counts = buckets.map(maleCount);
     let hi = 0, lo = 0;
     counts.forEach((c, i) => { if (c > counts[hi]) hi = i; if (c < counts[lo]) lo = i; });
     if (counts[hi] - counts[lo] <= 1) break; // good enough
 
-    // Move a male from hi -> lo and a female lo -> hi, choosing the closest
-    // ages so the age balance barely shifts.
+    // Move a male from hi -> lo and a female lo -> hi. Require equal skill (so
+    // team skill totals are unchanged) and prefer the closest ages.
     const males = buckets[hi].filter((p) => (p.gender || "").toLowerCase().startsWith("m"));
     const females = buckets[lo].filter((p) => !(p.gender || "").toLowerCase().startsWith("m"));
     if (!males.length || !females.length) break;
 
-    let bestM = males[0], bestF = females[0], bestDiff = Infinity;
+    let bestM = null, bestF = null, bestDiff = Infinity;
     for (const m of males) for (const f of females) {
+      if (m.skill !== f.skill) continue;                 // keep skill balance intact
       const d = Math.abs(m.age - f.age);
       if (d < bestDiff) { bestDiff = d; bestM = m; bestF = f; }
     }
+    if (!bestM || !bestF) break;                          // no skill-neutral swap available
     buckets[hi] = buckets[hi].filter((p) => p.id !== bestM.id).concat(bestF);
     buckets[lo] = buckets[lo].filter((p) => p.id !== bestF.id).concat(bestM);
   }
@@ -155,8 +168,10 @@ function enforcePairs(buckets, pairs) {
     if (!cands.length) continue;
     let best = cands[0], bestScore = Infinity;
     for (const x of cands) {
+      // skill is top priority: heavily prefer swapping out an equal-skill player
+      const skillPenalty = Math.abs((x.skill || SKILL_DEFAULT) - (b.skill || SKILL_DEFAULT)) * 100;
       const genderPenalty = isMale(x.gender) === isMale(b.gender) ? 0 : 5;
-      const score = genderPenalty + Math.abs((x.age || 0) - (b.age || 0));
+      const score = skillPenalty + genderPenalty + Math.abs((x.age || 0) - (b.age || 0));
       if (score < bestScore) { bestScore = score; best = x; }
     }
     // swap: b joins team ta, best moves to team tb
@@ -336,27 +351,37 @@ export function computeStandings(teams, schedule) {
 
 // ---------------------------------------------------------------------------
 //  Late-arrival helper: which existing team best absorbs one more player?
-//  Prefer a team with no sub (fill the sub slot). Among candidates, pick the
-//  one where the new player most improves gender balance, then age balance.
-//  Returns the chosen team id.
+//  Prefer a team with no sub (fill the sub slot). Among candidates, prioritise
+//  keeping SKILL balanced (send the player to the lowest-skill team), then
+//  gender, then age. Returns the chosen team id.
 // ---------------------------------------------------------------------------
 export function bestTeamForLateArrival(teams, playersById, newPlayer) {
   const noSub = teams.filter((t) => !t.subId);
   const pool = noSub.length ? noSub : teams; // if all have subs, still pick best
   const isMale = (g) => (g || "").toLowerCase().startsWith("m");
   const newAge = ageFromBirthdate(newPlayer.birthdate) ?? 0;
+  const newSkill = skillNum(newPlayer.skill);
+
+  // team skill totals across all current teams — target the lowest so adding
+  // this player evens things out (skill is the top priority).
+  const skillTotals = teams.map((t) =>
+    [...t.starterIds, t.subId].filter(Boolean)
+      .reduce((s, id) => s + skillNum(playersById[id] && playersById[id].skill), 0));
+  const minSkill = Math.min(...skillTotals);
 
   let best = pool[0], bestScore = Infinity;
   for (const team of pool) {
+    const ti = teams.indexOf(team);
     const ids = [...team.starterIds, team.subId].filter(Boolean);
     const members = ids.map((id) => playersById[id]).filter(Boolean);
     const males = members.filter((m) => isMale(m.gender)).length;
     const females = members.length - males;
-    // gender imbalance after adding
     const gAfter = Math.abs((males + (isMale(newPlayer.gender) ? 1 : 0)) - (females + (isMale(newPlayer.gender) ? 0 : 1)));
     const avgAge = members.length ? members.reduce((s, m) => s + (ageFromBirthdate(m.birthdate) ?? 0), 0) / members.length : newAge;
     const ageShift = Math.abs(newAge - avgAge);
-    const score = gAfter * 10 + ageShift; // gender weighted heavier
+    // skill dominates: how far above the leanest team this one would sit after adding.
+    const skillPenalty = (skillTotals[ti] + newSkill) - (minSkill + 0) ;
+    const score = skillPenalty * 100 + gAfter * 10 + ageShift;
     if (score < bestScore) { bestScore = score; best = team; }
   }
   return best.id;

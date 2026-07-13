@@ -12,7 +12,7 @@ import { firebaseConfig, ADMIN_PASSCODE } from "./firebase-config.js";
 import {
   ageFromBirthdate, generateTeams, generateTeamNames, buildSchedule,
   appendTeamToSchedule, computeStandings, planTeams, bestTeamForLateArrival,
-  loosePlayerCount, SCORE_TARGET,
+  loosePlayerCount, SCORE_TARGET, skillNum,
 } from "./logic.js";
 
 // ---------------------------------------------------------------------------
@@ -184,6 +184,7 @@ $("#addPlayerBtn").addEventListener("click", () => openPlayerForm());
 
 function openPlayerForm(existing) {
   const p = existing || { name: "", birthdate: "", gender: "Male" };
+  const sk = skillNum(p.skill);
   openModal({
     title: existing ? "Edit player" : "Register player",
     body: `
@@ -196,6 +197,12 @@ function openPlayerForm(existing) {
       <select id="pGender">
         <option ${p.gender === "Male" ? "selected" : ""}>Male</option>
         <option ${p.gender === "Female" ? "selected" : ""}>Female</option>
+      </select>
+      <label>Skill level <span class="hint" style="font-weight:400">(admin-only — used to balance teams)</span></label>
+      <select id="pSkill">
+        <option value="1" ${sk === 1 ? "selected" : ""}>1 — Not good</option>
+        <option value="2" ${sk === 2 ? "selected" : ""}>2 — OK</option>
+        <option value="3" ${sk === 3 ? "selected" : ""}>3 — Good</option>
       </select>`,
     okLabel: existing ? "Save" : "Register",
     afterOpen: () => {
@@ -211,11 +218,12 @@ function openPlayerForm(existing) {
       const name = $("#pName").value.trim();
       const birthdate = $("#pDob").value;
       const gender = $("#pGender").value;
+      const skill = skillNum($("#pSkill").value);
       if (!name) { toast("Name is required"); return false; }
       if (!birthdate) { toast("Birthdate is required"); return false; }
       try {
-        if (existing) await updateDoc(doc(db, "players", existing.id), { name, birthdate, gender });
-        else await addDoc(playersCol(), { name, birthdate, gender, createdAt: serverTimestamp() });
+        if (existing) await updateDoc(doc(db, "players", existing.id), { name, birthdate, gender, skill });
+        else await addDoc(playersCol(), { name, birthdate, gender, skill, createdAt: serverTimestamp() });
         toast(existing ? "Player updated" : "Player registered ✔");
       } catch (e) { console.error(e); toast("Save failed — check config"); return false; }
     },
@@ -253,7 +261,7 @@ function renderRoster() {
     const li = el("li", "list-item");
     li.innerHTML = `
       <div class="grow">
-        <div class="name">${esc(p.name)}</div>
+        <div class="name">${esc(p.name)} ${skillBadge(p)}</div>
         <div class="meta">${age != null ? "Age " + age : "—"} · ${esc(p.gender || "")}</div>
       </div>`;
     if (state.admin) {
@@ -303,7 +311,7 @@ function renderCheckin() {
     li.innerHTML = `
       <div class="check">✓</div>
       <div class="grow">
-        <div class="name">${esc(p.name)}</div>
+        <div class="name">${esc(p.name)} ${skillBadge(p)}</div>
         <div class="meta">${age != null ? "Age " + age : "—"} · ${esc(p.gender || "")}</div>
       </div>`;
     if (state.admin) { li.style.cursor = "pointer"; li.addEventListener("click", () => toggleCheckin(p.id)); }
@@ -366,19 +374,31 @@ function renderTeams() {
     const card = el("div", "team-card");
     const starters = t.starterIds.map((id) => byId[id]).filter(Boolean);
     const sub = t.subId ? byId[t.subId] : null;
+    const all = sub ? [...starters, sub] : starters;
     const avgAge = starters.length ? Math.round(starters.reduce((s, p) => s + (ageFromBirthdate(p.birthdate) ?? 0), 0) / starters.length) : "—";
     const males = starters.filter((p) => (p.gender || "").toLowerCase().startsWith("m")).length;
+    // Admin-only: total team skill (this is the primary balancing target).
+    const skillSum = all.reduce((s, p) => s + skillNum(p.skill), 0);
+    const skillMeta = state.admin ? ` · <span class="skill-meta">skill Σ${skillSum}</span>` : "";
     let rows = starters.map((p) => playerChip(p, false)).join("");
     if (sub) rows += playerChip(sub, true);
     card.innerHTML = `<h3>${esc(t.name)}</h3>
-      <div class="team-sub">${starters.length} starters${sub ? " + 1 sub" : ""} · avg age ${avgAge} · ${males}M / ${starters.length - males}F</div>
+      <div class="team-sub">${starters.length} starters${sub ? " + 1 sub" : ""} · avg age ${avgAge} · ${males}M / ${starters.length - males}F${skillMeta}</div>
       <div class="players">${rows}</div>`;
     area.appendChild(card);
   });
 }
 function playerChip(p, isSub) {
   const age = ageFromBirthdate(p.birthdate);
-  return `<div class="player-chip"><span class="badge${isSub ? " sub" : ""}">${isSub ? "SUB" : (age != null ? age : "—")}</span> ${esc(p.name)}${isSub && age != null ? " · " + age : ""}</div>`;
+  return `<div class="player-chip"><span class="badge${isSub ? " sub" : ""}">${isSub ? "SUB" : (age != null ? age : "—")}</span> ${esc(p.name)}${isSub && age != null ? " · " + age : ""} ${skillBadge(p)}</div>`;
+}
+
+// Admin-only skill badge. Renders nothing in the public view, so skill ratings
+// are never shown to non-admins in the app UI.
+function skillBadge(p) {
+  if (!state.admin) return "";
+  const s = skillNum(p.skill);
+  return `<span class="skill s${s}" title="Skill (admin only): ${s === 3 ? "Good" : s === 2 ? "OK" : "Not good"}">S${s}</span>`;
 }
 
 // ---- Late arrival ----------------------------------------------------------

@@ -154,6 +154,13 @@ button { font-family: inherit; }
 }
 .player-chip .badge.sub { background: #fff1d6; color: #8a6400; }
 
+/* ---------- Skill badge (admin-only; JS only renders it in admin mode) ---------- */
+.skill { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; vertical-align: middle; letter-spacing: .3px; }
+.skill.s1 { background: #fdecea; color: #c0392b; }
+.skill.s2 { background: #fff1d6; color: #8a6400; }
+.skill.s3 { background: #e6f7ee; color: #1e7a46; }
+.skill-meta { font-weight: 700; color: #8a6400; }
+
 /* ---------- Schedule ---------- */
 .round { margin-bottom: 16px; }
 .round-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
