@@ -334,13 +334,14 @@ export function appendTeamToSchedule(schedule, existingTeamIds, newTeamId) {
 }
 
 // ---------------------------------------------------------------------------
-//  Referee assignment. Distribute refs (playerIds available to ref tonight)
-//  across matches. A ref may also be a player: they're only eligible to ref a
-//  round in which their own team is NOT playing (you can't ref while you're on
-//  the court, and the two courts of a round are concurrent). We also avoid the
-//  same ref on both courts of a round. overwrite=true redistributes everything;
-//  otherwise only matches with no ref yet are filled (keeps manual picks and
-//  already-played games).
+//  Referee assignment. Each round, fill that round's games with referees.
+//  Goal: a "ref-only" person (available to ref but not on a team) should ref
+//  ONE game every round — they're here to ref, so never leave them idle. So we
+//  fill each round's matches with ref-only people first (one game each, rotating
+//  across rounds for fairness), then use any "player-refs" (people who also play)
+//  ONLY for rounds their own team isn't playing. A ref never covers both courts
+//  of a round. overwrite=true redistributes everything; otherwise only matches
+//  with no ref yet are filled (keeps manual picks + played games).
 //  `teams` (optional) is the tonight teams array, used to know who's playing.
 // ---------------------------------------------------------------------------
 export function assignRefs(schedule, refPool, teams = [], overwrite = false) {
@@ -349,23 +350,41 @@ export function assignRefs(schedule, refPool, teams = [], overwrite = false) {
   (teams || []).forEach((t) => {
     [...(t.starterIds || []), t.subId].filter(Boolean).forEach((id) => { teamOfPlayer[id] = t.id; });
   });
-  let ptr = 0;
+  const refOnly = pool.filter((id) => !teamOfPlayer[id]);       // here only to ref
+  const playerRefs = pool.filter((id) => teamOfPlayer[id]);     // also on a team
+  let roPtr = 0;                                                // rotates ref-only across rounds
+
   (schedule.rounds || []).forEach((r) => {
-    // teams on the court this round; a player-ref on one of them can't ref now
     const playingTeams = new Set();
     r.matches.forEach((m) => { if (!m.bye) { playingTeams.add(m.aTeamId); playingTeams.add(m.bTeamId); } });
-    const roundEligible = pool.filter((id) => !playingTeams.has(teamOfPlayer[id]));
+
+    // matches that still need a ref this round
     const used = new Set();
-    if (!overwrite) r.matches.forEach((m) => { if (!m.bye && m.refId) used.add(m.refId); });
+    const targets = [];
     r.matches.forEach((m) => {
       if (m.bye) return;
-      if (!overwrite && m.refId) return;                 // keep existing assignment
-      const avail = roundEligible.filter((id) => !used.has(id));
-      if (!avail.length) { if (overwrite) m.refId = null; return; }  // nobody free -> no ref
-      const pick = avail[ptr % avail.length];
-      ptr++;
-      m.refId = pick; used.add(pick);
+      if (!overwrite && m.refId) { used.add(m.refId); return; }
+      targets.push(m);
     });
+    if (!targets.length) return;
+
+    // priority order: ref-only first (rotated so it's not always the same person
+    // on the same court), then player-refs whose team isn't on the court now.
+    const rotatedRefOnly = refOnly.map((_, k) => refOnly[(roPtr + k) % refOnly.length]);
+    const eligiblePlayerRefs = playerRefs.filter((id) => !playingTeams.has(teamOfPlayer[id]));
+    const order = [...rotatedRefOnly, ...eligiblePlayerRefs];
+
+    let oi = 0;
+    for (const m of targets) {
+      let pick = null;
+      while (oi < order.length) {
+        const cand = order[oi++];
+        if (!used.has(cand)) { pick = cand; break; }
+      }
+      if (overwrite || pick) m.refId = pick || null;   // may be null if not enough refs
+      if (pick) used.add(pick);
+    }
+    if (refOnly.length) roPtr = (roPtr + Math.min(targets.length, refOnly.length)) % refOnly.length;
   });
   return schedule;
 }
