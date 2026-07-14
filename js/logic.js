@@ -49,11 +49,12 @@ export function planTeams(n) {
   return { teams, subs, bench };
 }
 
-// Skill rating is 1 (not good), 2 (ok), 3 (good). Missing/invalid -> 2 (neutral).
+// Skill rating: 1 (not good), 2 (ok), 3 (good), 4 (fantastic). Missing/invalid -> 2.
 export const SKILL_DEFAULT = 2;
+export const SKILL_MAX = 4;
 export function skillNum(v) {
   const n = Number(v);
-  return n === 1 || n === 2 || n === 3 ? n : SKILL_DEFAULT;
+  return Number.isInteger(n) && n >= 1 && n <= SKILL_MAX ? n : SKILL_DEFAULT;
 }
 
 // ---------------------------------------------------------------------------

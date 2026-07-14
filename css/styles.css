@@ -159,6 +159,7 @@ button { font-family: inherit; }
 .skill.s1 { background: #fdecea; color: #c0392b; }
 .skill.s2 { background: #fff1d6; color: #8a6400; }
 .skill.s3 { background: #e6f7ee; color: #1e7a46; }
+.skill.s4 { background: #ede9fe; color: #6d28d9; }
 .skill-meta { font-weight: 700; color: #8a6400; }
 
 /* ---------- Referee ---------- */

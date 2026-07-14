@@ -204,6 +204,7 @@ function openPlayerForm(existing) {
         <option value="1" ${sk === 1 ? "selected" : ""}>1 — Not good</option>
         <option value="2" ${sk === 2 ? "selected" : ""}>2 — OK</option>
         <option value="3" ${sk === 3 ? "selected" : ""}>3 — Good</option>
+        <option value="4" ${sk === 4 ? "selected" : ""}>4 — Fantastic</option>
       </select>
       <label class="checkline"><input id="pCanRef" type="checkbox" ${p.canRef ? "checked" : ""} /> Can referee <span class="refbadge">REF</span></label>`,
     okLabel: existing ? "Save" : "Register",
@@ -435,7 +436,8 @@ function playerChip(p, isSub) {
 function skillBadge(p) {
   if (!state.admin) return "";
   const s = skillNum(p.skill);
-  return `<span class="skill s${s}" title="Skill (admin only): ${s === 3 ? "Good" : s === 2 ? "OK" : "Not good"}">S${s}</span>`;
+  const label = s === 4 ? "Fantastic" : s === 3 ? "Good" : s === 2 ? "OK" : "Not good";
+  return `<span class="skill s${s}" title="Skill (admin only): ${label}">S${s}</span>`;
 }
 
 // ---- Late arrival ----------------------------------------------------------
