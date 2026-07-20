@@ -13,6 +13,7 @@ import {
   ageFromBirthdate, generateTeams, generateTeamNames, buildSchedule,
   appendTeamToSchedule, computeStandings, planTeams, bestTeamForLateArrival,
   loosePlayerCount, SCORE_TARGET, WIN_BY, skillNum, assignRefs, scoreError,
+  generateBalancedTeams, buildTeammateHistory,
 } from "./logic.js";
 
 // ---------------------------------------------------------------------------
@@ -379,7 +380,10 @@ async function doGenerateTeams(isRegen) {
     okLabel: isRegen ? "Regenerate" : "Generate",
     onOk: async () => {
       const names = generateTeamNames(plan.teams, state.usedTeamNames);
-      const teams = generateTeams(checkedPlayers, names, state.pairs);
+      // Smarter balancing: try many layouts, keep the most balanced, and avoid
+      // repeating recent teammates (only among who's here tonight).
+      const teammateHistory = buildTeammateHistory(state.history);
+      const teams = generateBalancedTeams(checkedPlayers, names, state.pairs, teammateHistory);
       const schedule = buildSchedule(teams);
       assignRefs(schedule, state.tonight.refs, teams, true);   // auto-distribute tonight's refs
       try {

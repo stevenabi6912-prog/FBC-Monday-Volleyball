@@ -65,7 +65,7 @@ export function skillNum(v) {
 //  balance is never disturbed.
 //  player: { id, name, birthdate, gender, skill }
 // ---------------------------------------------------------------------------
-export function generateTeams(players, teamNames, pairs = []) {
+export function generateTeams(players, teamNames, pairs = [], randomize = false) {
   const enriched = players.map((p) => ({ ...p, age: ageFromBirthdate(p.birthdate) ?? 0, skill: skillNum(p.skill) }));
   const n = enriched.length;
   const { teams: T, subs: S } = planTeams(n);
@@ -74,9 +74,13 @@ export function generateTeams(players, teamNames, pairs = []) {
   // Capacities: the first S teams get a sub slot (7), the rest are 6.
   const capacity = Array.from({ length: T }, (_, i) => TEAM_SIZE + (i < S ? SUB_PER_TEAM : 0));
 
-  // Sort by skill (high -> low) first so the snake balances total skill across
-  // teams; tie-break by age so ages also spread within each skill tier.
-  const sorted = [...enriched].sort((a, b) => b.skill - a.skill || b.age - a.age);
+  // Sort by skill (high -> low) so the snake balances total skill across teams.
+  // Normally tie-break by age (spreads ages); when `randomize` is set we sort by
+  // skill only (a stable sort keeps the caller's shuffled order within a tier),
+  // which lets generateBalancedTeams try many varied-but-still-skill-fair layouts.
+  const sorted = randomize
+    ? [...enriched].sort((a, b) => b.skill - a.skill)
+    : [...enriched].sort((a, b) => b.skill - a.skill || b.age - a.age);
 
   const buckets = Array.from({ length: T }, () => []);
   let dir = 1, t = 0;
@@ -127,6 +131,76 @@ export function generateTeams(players, teamNames, pairs = []) {
       subId,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+//  Smarter balancing: try many team layouts, keep the most balanced one.
+//  Skill balance stays the top priority; among skill-fair layouts we prefer the
+//  one with the evenest genders, the fewest repeat teammates (from recent weeks),
+//  then the closest ages. Attendance varies week to week, so repeat-avoidance
+//  only ever looks at players actually present tonight.
+// ---------------------------------------------------------------------------
+export function generateBalancedTeams(players, teamNames, pairs = [], teammateHistory = {}, tries = 50) {
+  if (!players.length) return [];
+  const byId = Object.fromEntries(players.map((p) => [p.id, p]));
+  const pinnedKeys = new Set((pairs || []).map(([a, b]) => pairKey(a, b)));
+  let best = null, bestScore = Infinity;
+  for (let i = 0; i < tries; i++) {
+    const teams = generateTeams(shuffled(players), teamNames, pairs, true);
+    const s = teamsScore(teams, byId, teammateHistory, pinnedKeys);
+    if (s < bestScore) { bestScore = s; best = teams; }
+  }
+  return best || generateTeams(players, teamNames, pairs);
+}
+
+// Lower is better. Skill spread dominates; then gender, then repeat teammates,
+// then age spread.
+function teamsScore(teams, byId, hist, pinnedKeys) {
+  const isMale = (g) => (g || "").toLowerCase().startsWith("m");
+  const skillTotals = [], maleCounts = [], avgAges = [];
+  let repeat = 0;
+  for (const t of teams) {
+    const ids = [...t.starterIds, t.subId].filter(Boolean);
+    const mem = ids.map((id) => byId[id]).filter(Boolean);
+    skillTotals.push(mem.reduce((s, p) => s + skillNum(p.skill), 0));
+    maleCounts.push(mem.filter((p) => isMale(p.gender)).length);
+    avgAges.push(mem.length ? mem.reduce((s, p) => s + (ageFromBirthdate(p.birthdate) ?? 0), 0) / mem.length : 0);
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        if (pinnedKeys.has(pairKey(ids[i], ids[j]))) continue;   // the forced pair doesn't count
+        const a = byId[ids[i]], b = byId[ids[j]];
+        if (a && b) repeat += hist[pairKey(a.name, b.name)] || 0;
+      }
+    }
+  }
+  const spread = (arr) => Math.max(...arr) - Math.min(...arr);
+  return spread(skillTotals) * 1000 + spread(maleCounts) * 50 + repeat * 8 + Math.round(spread(avgAges));
+}
+
+// Build a "who played with whom recently" weight map from history (names). More
+// recent weeks weigh more. history is newest-first.
+export function buildTeammateHistory(history, weeks = 6) {
+  const map = {};
+  (history || []).slice(0, weeks).forEach((h, idx) => {
+    const w = weeks - idx;   // most recent night weighted highest
+    (h.teams || []).forEach((t) => {
+      const names = [...(t.starters || []), t.sub].filter(Boolean);
+      for (let i = 0; i < names.length; i++) {
+        for (let j = i + 1; j < names.length; j++) {
+          const k = pairKey(names[i], names[j]);
+          map[k] = (map[k] || 0) + w;
+        }
+      }
+    });
+  });
+  return map;
+}
+
+function pairKey(a, b) { return a < b ? a + "|" + b : b + "|" + a; }
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
 }
 
 // In-place gender balancing across buckets. Swaps are restricted to players of
